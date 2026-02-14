@@ -4,7 +4,7 @@ namespace AirportFinder;
 
 public record Airport(string Name, string Destination);
 
-public record Leg(string Mode, int Duration, string From, string To, string Instruction);
+public record Leg(string Mode, int Duration, string From, string To, string Instruction, double[][] Path);
 
 public record JourneyResult(
     string AirportName,
@@ -100,7 +100,24 @@ public class AirportService
                         var instruction = leg.TryGetProperty("instruction", out var instr)
                             ? instr.GetProperty("summary").GetString() ?? ""
                             : "";
-                        legs.Add(new Leg(Capitalize(mode), legDuration, legFrom, legTo, instruction));
+
+                        var pathStr = leg.TryGetProperty("path", out var pathObj)
+                            && pathObj.TryGetProperty("lineString", out var ls)
+                            ? ls.GetString() : null;
+                        double[][] path = Array.Empty<double[]>();
+                        if (pathStr is not null)
+                        {
+                            try
+                            {
+                                using var pathDoc = JsonDocument.Parse(pathStr);
+                                path = pathDoc.RootElement.EnumerateArray()
+                                    .Select(p => new[] { p[0].GetDouble(), p[1].GetDouble() })
+                                    .ToArray();
+                            }
+                            catch { }
+                        }
+
+                        legs.Add(new Leg(Capitalize(mode), legDuration, legFrom, legTo, instruction, path));
                     }
                     bestSummary = string.Join(" → ", modes.Select(Capitalize));
                     bestLegs = legs;

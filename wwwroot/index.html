@@ -4,6 +4,9 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>London Airport Finder</title>
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg">
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9/dist/leaflet.css">
+    <script src="https://unpkg.com/leaflet@1.9/dist/leaflet.js"></script>
     <link rel="stylesheet" href="/style.css">
 </head>
 <body>
@@ -86,7 +89,10 @@
                                     </div>
                                     <div class="duration">${r.durationMinutes} <small>min</small></div>
                                 </div>
-                                <div class="route-detail">${legsHtml}</div>
+                                <div class="route-detail">
+                                    <div class="map" id="map-${i}"></div>
+                                    ${legsHtml}
+                                </div>
                             </div>`;
                     } else {
                         html += `
@@ -106,6 +112,40 @@
                 });
                 html += '</div>';
                 output.innerHTML = html;
+
+                const modeColors = {
+                    Walking: '#666', Bus: '#e74c3c', Tube: '#3498db',
+                    Overground: '#e87722', Elizabeth: '#6950a1',
+                    DLR: '#00afad', National: '#ff6600', Coach: '#8B4513',
+                    'National Rail': '#ff6600', Tram: '#66cc00',
+                    'River Bus': '#0099cc', Cable: '#dc241f'
+                };
+
+                document.querySelectorAll('.result-card.expandable').forEach((card, i) => {
+                    card.addEventListener('click', () => {
+                        const mapDiv = card.querySelector('.map');
+                        if (!mapDiv || mapDiv._leaflet_id) return;
+                        const legs = data[i].legs || [];
+                        const allCoords = legs.flatMap(l => l.path || []);
+                        if (!allCoords.length) { mapDiv.style.display = 'none'; return; }
+
+                        setTimeout(() => {
+                            const map = L.map(mapDiv, { zoomControl: false, attributionControl: false });
+                            L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
+
+                            legs.forEach(leg => {
+                                if (leg.path && leg.path.length)
+                                    L.polyline(leg.path, { color: modeColors[leg.mode] || '#4a6cf7', weight: 4 }).addTo(map);
+                            });
+
+                            map.fitBounds(L.polyline(allCoords).getBounds().pad(0.1));
+                            L.circleMarker(allCoords[0], { radius: 6, color: '#2ecc71', fillColor: '#2ecc71', fillOpacity: 1 }).addTo(map);
+                            L.circleMarker(allCoords[allCoords.length - 1], { radius: 6, color: '#e74c3c', fillColor: '#e74c3c', fillOpacity: 1 }).addTo(map);
+
+                            setTimeout(() => map.invalidateSize(), 350);
+                        }, 50);
+                    });
+                });
             } catch (err) {
                 output.innerHTML = `<div class="error">Network error. Please try again.</div>`;
             } finally {

@@ -102,7 +102,7 @@ h1 {
 }
 
 .result-card.expanded .route-detail {
-    max-height: 500px;
+    max-height: 800px;
     padding: 0.6rem 1.2rem 1rem;
     border-top: 1px solid #eee;
 }
@@ -170,4 +170,10 @@ h1 {
     color: #999;
     margin-right: 0.8rem;
     min-width: 1.5rem;
+}
+
+.route-detail .map {
+    height: 200px;
+    border-radius: 6px;
+    margin-bottom: 0.5rem;
 }
