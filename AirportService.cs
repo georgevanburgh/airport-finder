@@ -1,4 +1,5 @@
 using System.Text.Json;
+using Microsoft.Extensions.Logging;
 
 namespace AirportFinder;
 
@@ -14,7 +15,7 @@ public record JourneyResult(
     string? Error = null
 );
 
-public class AirportService
+public class AirportService(HttpClient http, ILogger<AirportService> logger)
 {
     private static readonly Airport[] Airports =
     [
@@ -26,31 +27,24 @@ public class AirportService
         new("Southend", "51.56867,0.70505"),
     ];
 
-    private readonly HttpClient _http;
-
-    public AirportService(HttpClient http)
-    {
-        _http = http;
-    }
-
-    public async Task<(double Lat, double Lon)?> GeocodePostcodeAsync(string postcode)
+    public async Task<(double Lat, double Lon)?> GeocodePostcodeAsync(string postcode, CancellationToken ct = default)
     {
         var encoded = Uri.EscapeDataString(postcode.Trim());
-        var response = await _http.GetAsync($"https://api.postcodes.io/postcodes/{encoded}");
+        var response = await http.GetAsync($"https://api.postcodes.io/postcodes/{encoded}", ct);
 
         if (!response.IsSuccessStatusCode)
             return null;
 
-        using var doc = await JsonDocument.ParseAsync(await response.Content.ReadAsStreamAsync());
+        using var doc = await JsonDocument.ParseAsync(await response.Content.ReadAsStreamAsync(ct), cancellationToken: ct);
         var result = doc.RootElement.GetProperty("result");
         var lat = result.GetProperty("latitude").GetDouble();
         var lon = result.GetProperty("longitude").GetDouble();
         return (lat, lon);
     }
 
-    public async Task<List<JourneyResult>> GetJourneyTimesAsync(double fromLat, double fromLon, string? date = null, string? time = null)
+    public async Task<List<JourneyResult>> GetJourneyTimesAsync(double fromLat, double fromLon, string? date = null, string? time = null, CancellationToken ct = default)
     {
-        var tasks = Airports.Select(airport => GetSingleJourneyAsync(fromLat, fromLon, airport, date, time));
+        var tasks = Airports.Select(airport => GetSingleJourneyAsync(fromLat, fromLon, airport, date, time, ct));
         var results = await Task.WhenAll(tasks);
         return results
             .OrderBy(r => r.DurationMinutes == null)
@@ -58,7 +52,7 @@ public class AirportService
             .ToList();
     }
 
-    private async Task<JourneyResult> GetSingleJourneyAsync(double fromLat, double fromLon, Airport airport, string? date, string? time)
+    private async Task<JourneyResult> GetSingleJourneyAsync(double fromLat, double fromLon, Airport airport, string? date, string? time, CancellationToken ct)
     {
         try
         {
@@ -66,14 +60,18 @@ public class AirportService
             var url = $"https://api.tfl.gov.uk/Journey/JourneyResults/{from}/to/{airport.Destination}";
             var query = new List<string>();
             if (date is not null) query.Add($"date={date}");
-            if (time is not null) query.Add($"time={time}&timeIs=Departing");
+            if (time is not null)
+            {
+                query.Add($"time={time}");
+                query.Add("timeIs=Departing");
+            }
             if (query.Count > 0) url += "?" + string.Join("&", query);
-            var response = await _http.GetAsync(url);
+            var response = await http.GetAsync(url, ct);
 
             if (!response.IsSuccessStatusCode)
                 return new JourneyResult(airport.Name, null, "", Error: $"TfL API returned {(int)response.StatusCode}");
 
-            using var doc = await JsonDocument.ParseAsync(await response.Content.ReadAsStreamAsync());
+            using var doc = await JsonDocument.ParseAsync(await response.Content.ReadAsStreamAsync(ct), cancellationToken: ct);
             var journeys = doc.RootElement.GetProperty("journeys");
 
             int? bestDuration = null;
@@ -83,43 +81,13 @@ public class AirportService
             foreach (var journey in journeys.EnumerateArray())
             {
                 var duration = journey.GetProperty("duration").GetInt32();
-                if (bestDuration == null || duration < bestDuration)
+                if (bestDuration is null || duration < bestDuration)
                 {
                     bestDuration = duration;
-                    var modes = new List<string>();
-                    var legs = new List<Leg>();
-                    foreach (var leg in journey.GetProperty("legs").EnumerateArray())
-                    {
-                        var mode = leg.GetProperty("mode").GetProperty("name").GetString() ?? "";
-                        if (mode != "" && !modes.Contains(mode))
-                            modes.Add(mode);
-
-                        var legDuration = leg.GetProperty("duration").GetInt32();
-                        var legFrom = leg.GetProperty("departurePoint").GetProperty("commonName").GetString() ?? "";
-                        var legTo = leg.GetProperty("arrivalPoint").GetProperty("commonName").GetString() ?? "";
-                        var instruction = leg.TryGetProperty("instruction", out var instr)
-                            ? instr.GetProperty("summary").GetString() ?? ""
-                            : "";
-
-                        var pathStr = leg.TryGetProperty("path", out var pathObj)
-                            && pathObj.TryGetProperty("lineString", out var ls)
-                            ? ls.GetString() : null;
-                        double[][] path = Array.Empty<double[]>();
-                        if (pathStr is not null)
-                        {
-                            try
-                            {
-                                using var pathDoc = JsonDocument.Parse(pathStr);
-                                path = pathDoc.RootElement.EnumerateArray()
-                                    .Select(p => new[] { p[0].GetDouble(), p[1].GetDouble() })
-                                    .ToArray();
-                            }
-                            catch { }
-                        }
-
-                        legs.Add(new Leg(Capitalize(mode), legDuration, legFrom, legTo, instruction, path));
-                    }
-                    bestSummary = string.Join(" → ", modes.Select(Capitalize));
+                    var legs = journey.GetProperty("legs").EnumerateArray()
+                        .Select(ParseLeg)
+                        .ToList();
+                    bestSummary = string.Join(" → ", legs.Select(l => l.Mode).Distinct());
                     bestLegs = legs;
                 }
             }
@@ -130,6 +98,38 @@ public class AirportService
         {
             return new JourneyResult(airport.Name, null, "", Error: $"Error: {ex.Message}");
         }
+    }
+
+    private Leg ParseLeg(JsonElement leg)
+    {
+        var mode = leg.GetProperty("mode").GetProperty("name").GetString() ?? "";
+        var duration = leg.GetProperty("duration").GetInt32();
+        var from = leg.GetProperty("departurePoint").GetProperty("commonName").GetString() ?? "";
+        var to = leg.GetProperty("arrivalPoint").GetProperty("commonName").GetString() ?? "";
+        var instruction = leg.TryGetProperty("instruction", out var instr)
+            ? instr.GetProperty("summary").GetString() ?? ""
+            : "";
+
+        var pathStr = leg.TryGetProperty("path", out var pathObj)
+            && pathObj.TryGetProperty("lineString", out var ls)
+            ? ls.GetString() : null;
+        double[][] path = [];
+        if (pathStr is not null)
+        {
+            try
+            {
+                using var pathDoc = JsonDocument.Parse(pathStr);
+                path = pathDoc.RootElement.EnumerateArray()
+                    .Select(p => new[] { p[0].GetDouble(), p[1].GetDouble() })
+                    .ToArray();
+            }
+            catch (Exception ex)
+            {
+                logger.LogWarning(ex, "Failed to parse path lineString: {PathStr}", pathStr);
+            }
+        }
+
+        return new Leg(Capitalize(mode), duration, from, to, instruction, path);
     }
 
     private static string Capitalize(string s) =>

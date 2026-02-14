@@ -36,8 +36,24 @@
         const btn = document.getElementById('searchBtn');
         const output = document.getElementById('output');
 
+        const esc = s => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+
         // Default the date input to today
         dateInput.value = new Date().toISOString().slice(0, 10);
+
+        // Restore form state from URL params
+        const params = new URLSearchParams(window.location.search);
+        if (params.has('postcode')) input.value = params.get('postcode');
+        if (params.has('date')) dateInput.value = params.get('date');
+        if (params.has('time')) timePeriod.value = params.get('time');
+
+        const modeColors = {
+            Walking: '#666', Bus: '#e74c3c', Tube: '#3498db',
+            Overground: '#e87722', Elizabeth: '#6950a1',
+            DLR: '#00afad', National: '#ff6600', Coach: '#8B4513',
+            'National Rail': '#ff6600', Tram: '#66cc00',
+            'River Bus': '#0099cc', Cable: '#dc241f'
+        };
 
         form.addEventListener('submit', async (e) => {
             e.preventDefault();
@@ -47,19 +63,29 @@
             btn.disabled = true;
             output.innerHTML = '<div class="spinner">Searching routes to all 6 airports...</div>';
 
-            let url = `/api/search?postcode=${encodeURIComponent(postcode)}`;
             const time = timePeriod.value;
+
+            // Update URL with search parameters
+            const shareParams = new URLSearchParams({ postcode });
+            if (time) {
+                shareParams.set('date', dateInput.value);
+                shareParams.set('time', time);
+            }
+            history.replaceState(null, '', '?' + shareParams.toString());
+
+            let url = `/api/search?postcode=${encodeURIComponent(postcode)}`;
             if (time) {
                 const date = dateInput.value.replace(/-/g, '');
                 url += `&date=${date}&time=${time}`;
             }
 
+            let data = null;
             try {
                 const res = await fetch(url);
-                const data = await res.json();
+                data = await res.json();
 
                 if (!res.ok) {
-                    output.innerHTML = `<div class="error">${data.error}</div>`;
+                    output.innerHTML = `<div class="error">${esc(data.error)}</div>`;
                     return;
                 }
 
@@ -73,18 +99,18 @@
                     if (r.durationMinutes != null) {
                         const legsHtml = (r.legs || []).map(leg => `
                             <div class="leg-row">
-                                <span class="leg-mode">${leg.mode}</span>
+                                <span class="leg-mode">${esc(leg.mode)}</span>
                                 <span class="leg-duration">${leg.duration} min</span>
-                                <span class="leg-instruction">${leg.instruction || (leg.from + ' → ' + leg.to)}</span>
+                                <span class="leg-instruction">${esc(leg.instruction || (leg.from + ' \u2192 ' + leg.to))}</span>
                             </div>`).join('');
                         html += `
-                            <div class="result-card expandable" onclick="this.classList.toggle('expanded')">
+                            <div class="result-card expandable">
                                 <div class="result-summary">
-                                    <div style="display:flex;align-items:center">
+                                    <div class="result-left">
                                         <span class="rank">${i + 1}.</span>
                                         <div>
-                                            <div class="airport-name">${r.airportName}</div>
-                                            <div class="transport-modes">${r.summary}</div>
+                                            <div class="airport-name">${esc(r.airportName)}</div>
+                                            <div class="transport-modes">${esc(r.summary)}</div>
                                         </div>
                                     </div>
                                     <div class="duration">${r.durationMinutes} <small>min</small></div>
@@ -98,10 +124,10 @@
                         html += `
                             <div class="result-card unavailable">
                                 <div class="result-summary">
-                                    <div style="display:flex;align-items:center">
+                                    <div class="result-left">
                                         <span class="rank">-</span>
                                         <div>
-                                            <div class="airport-name">${r.airportName}</div>
+                                            <div class="airport-name">${esc(r.airportName)}</div>
                                             <div class="transport-modes">Route unavailable</div>
                                         </div>
                                     </div>
@@ -113,16 +139,9 @@
                 html += '</div>';
                 output.innerHTML = html;
 
-                const modeColors = {
-                    Walking: '#666', Bus: '#e74c3c', Tube: '#3498db',
-                    Overground: '#e87722', Elizabeth: '#6950a1',
-                    DLR: '#00afad', National: '#ff6600', Coach: '#8B4513',
-                    'National Rail': '#ff6600', Tram: '#66cc00',
-                    'River Bus': '#0099cc', Cable: '#dc241f'
-                };
-
                 document.querySelectorAll('.result-card.expandable').forEach((card, i) => {
                     card.addEventListener('click', () => {
+                        card.classList.toggle('expanded');
                         const mapDiv = card.querySelector('.map');
                         if (!mapDiv || mapDiv._leaflet_id) return;
                         const legs = data[i].legs || [];
@@ -130,8 +149,12 @@
                         if (!allCoords.length) { mapDiv.style.display = 'none'; return; }
 
                         setTimeout(() => {
-                            const map = L.map(mapDiv, { zoomControl: false, attributionControl: false });
-                            L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
+                            const map = L.map(mapDiv, { zoomControl: false });
+                            L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                                attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
+                            }).addTo(map);
+
+                            mapDiv.addEventListener('click', e => e.stopPropagation());
 
                             legs.forEach(leg => {
                                 if (leg.path && leg.path.length)
@@ -152,6 +175,9 @@
                 btn.disabled = false;
             }
         });
+
+        // Auto-search if URL has a postcode param (shared link)
+        if (params.has('postcode')) form.requestSubmit();
     </script>
 </body>
 </html>
