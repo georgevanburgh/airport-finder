@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>London Airport Finder</title>
+    <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+    <h1>London Airport Finder</h1>
+    <p class="subtitle">Find the fastest public transport route to London's airports</p>
+
+    <form class="search-form" id="searchForm">
+        <input type="text" id="postcode" placeholder="Enter UK postcode (e.g. SW1A 1AA)" autocomplete="postal-code">
+        <input type="date" id="date">
+        <select id="timePeriod">
+            <option value="">Now</option>
+            <option value="0800">Morning (08:00)</option>
+            <option value="1200">Midday (12:00)</option>
+            <option value="1500">Afternoon (15:00)</option>
+            <option value="1800">Evening (18:00)</option>
+        </select>
+        <button type="submit" id="searchBtn">Search</button>
+    </form>
+
+    <div id="output"></div>
+
+    <script>
+        const form = document.getElementById('searchForm');
+        const input = document.getElementById('postcode');
+        const dateInput = document.getElementById('date');
+        const timePeriod = document.getElementById('timePeriod');
+        const btn = document.getElementById('searchBtn');
+        const output = document.getElementById('output');
+
+        // Default the date input to today
+        dateInput.value = new Date().toISOString().slice(0, 10);
+
+        form.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const postcode = input.value.trim();
+            if (!postcode) return;
+
+            btn.disabled = true;
+            output.innerHTML = '<div class="spinner">Searching routes to all 6 airports...</div>';
+
+            let url = `/api/search?postcode=${encodeURIComponent(postcode)}`;
+            const time = timePeriod.value;
+            if (time) {
+                const date = dateInput.value.replace(/-/g, '');
+                url += `&date=${date}&time=${time}`;
+            }
+
+            try {
+                const res = await fetch(url);
+                const data = await res.json();
+
+                if (!res.ok) {
+                    output.innerHTML = `<div class="error">${data.error}</div>`;
+                    return;
+                }
+
+                if (!data.length) {
+                    output.innerHTML = '<div class="error">No results found.</div>';
+                    return;
+                }
+
+                let html = '<div class="results">';
+                data.forEach((r, i) => {
+                    if (r.durationMinutes != null) {
+                        const legsHtml = (r.legs || []).map(leg => `
+                            <div class="leg-row">
+                                <span class="leg-mode">${leg.mode}</span>
+                                <span class="leg-duration">${leg.duration} min</span>
+                                <span class="leg-instruction">${leg.instruction || (leg.from + ' → ' + leg.to)}</span>
+                            </div>`).join('');
+                        html += `
+                            <div class="result-card expandable" onclick="this.classList.toggle('expanded')">
+                                <div class="result-summary">
+                                    <div style="display:flex;align-items:center">
+                                        <span class="rank">${i + 1}.</span>
+                                        <div>
+                                            <div class="airport-name">${r.airportName}</div>
+                                            <div class="transport-modes">${r.summary}</div>
+                                        </div>
+                                    </div>
+                                    <div class="duration">${r.durationMinutes} <small>min</small></div>
+                                </div>
+                                <div class="route-detail">${legsHtml}</div>
+                            </div>`;
+                    } else {
+                        html += `
+                            <div class="result-card unavailable">
+                                <div class="result-summary">
+                                    <div style="display:flex;align-items:center">
+                                        <span class="rank">-</span>
+                                        <div>
+                                            <div class="airport-name">${r.airportName}</div>
+                                            <div class="transport-modes">Route unavailable</div>
+                                        </div>
+                                    </div>
+                                    <div class="duration" style="color:#999">N/A</div>
+                                </div>
+                            </div>`;
+                    }
+                });
+                html += '</div>';
+                output.innerHTML = html;
+            } catch (err) {
+                output.innerHTML = `<div class="error">Network error. Please try again.</div>`;
+            } finally {
+                btn.disabled = false;
+            }
+        });
+    </script>
+</body>
+</html>

@@ -1,0 +1,173 @@
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    max-width: 640px;
+    margin: 0 auto;
+    padding: 2rem 1rem;
+    background: #f5f7fa;
+    color: #1a1a2e;
+}
+
+h1 {
+    font-size: 1.5rem;
+    margin-bottom: 0.25rem;
+}
+
+.subtitle {
+    color: #666;
+    margin-bottom: 1.5rem;
+    font-size: 0.9rem;
+}
+
+.search-form {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    margin-bottom: 1.5rem;
+}
+
+.search-form input,
+.search-form select {
+    padding: 0.6rem 0.8rem;
+    border: 2px solid #ddd;
+    border-radius: 6px;
+    font-size: 1rem;
+    outline: none;
+    transition: border-color 0.2s;
+}
+
+.search-form input#postcode {
+    flex: 1;
+}
+
+.search-form input:focus,
+.search-form select:focus {
+    border-color: #4a6cf7;
+}
+
+.search-form button {
+    padding: 0.6rem 1.2rem;
+    background: #4a6cf7;
+    color: #fff;
+    border: none;
+    border-radius: 6px;
+    font-size: 1rem;
+    cursor: pointer;
+    transition: background 0.2s;
+}
+
+.search-form button:hover { background: #3a5ce5; }
+.search-form button:disabled { background: #aaa; cursor: not-allowed; }
+
+.error {
+    background: #fee;
+    color: #c33;
+    padding: 0.8rem;
+    border-radius: 6px;
+    margin-bottom: 1rem;
+}
+
+.spinner {
+    text-align: center;
+    padding: 2rem;
+    color: #666;
+}
+
+.results { display: flex; flex-direction: column; gap: 0.6rem; }
+
+.result-card {
+    background: #fff;
+    border-radius: 8px;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+}
+
+.result-card.expandable { cursor: pointer; }
+
+.result-summary {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 1rem 1.2rem;
+}
+
+.result-card.unavailable { opacity: 0.5; }
+
+.route-detail {
+    max-height: 0;
+    overflow: hidden;
+    transition: max-height 0.3s ease, padding 0.3s ease;
+    padding: 0 1.2rem;
+    border-top: 0 solid #eee;
+}
+
+.result-card.expanded .route-detail {
+    max-height: 500px;
+    padding: 0.6rem 1.2rem 1rem;
+    border-top: 1px solid #eee;
+}
+
+.leg-row {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    padding: 0.35rem 0;
+    font-size: 0.85rem;
+    color: #444;
+}
+
+.leg-row + .leg-row {
+    border-top: 1px solid #f0f0f0;
+}
+
+.leg-mode {
+    background: #e8ecf7;
+    color: #4a6cf7;
+    padding: 0.15rem 0.5rem;
+    border-radius: 4px;
+    font-size: 0.75rem;
+    font-weight: 600;
+    white-space: nowrap;
+}
+
+.leg-duration {
+    font-weight: 600;
+    white-space: nowrap;
+    min-width: 3.5rem;
+}
+
+.leg-instruction {
+    color: #666;
+    flex: 1;
+}
+
+.airport-name {
+    font-weight: 600;
+    font-size: 1.05rem;
+}
+
+.transport-modes {
+    color: #666;
+    font-size: 0.85rem;
+    margin-top: 0.2rem;
+}
+
+.duration {
+    font-size: 1.3rem;
+    font-weight: 700;
+    color: #4a6cf7;
+    white-space: nowrap;
+}
+
+.duration small {
+    font-size: 0.75rem;
+    font-weight: 400;
+    color: #888;
+}
+
+.rank {
+    font-size: 0.8rem;
+    color: #999;
+    margin-right: 0.8rem;
+    min-width: 1.5rem;
+}
